@@ -1,0 +1,6 @@
+cd lambda
+pip install -r requirements.txt -t package
+cd package
+zip -r ../function.zip .
+cd ..
+zip -g function.zip image_processor.py
