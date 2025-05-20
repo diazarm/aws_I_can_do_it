@@ -1,26 +1,31 @@
 provider "aws" {
-  region = "sa-east-1"  # o "us-east-1" si decides cambiar de región
+  region = "us-east-1"
+}
+
+resource "random_id" "suffix" {
+  byte_length = 4
 }
 
 resource "aws_s3_bucket" "originals" {
-  bucket = "my-image-originals-marcelo"
+  bucket = "my-image-originals-marcelo-${random_id.suffix.hex}"
   force_destroy = true
+
   tags = {
     Name = "Original Images Bucket"
   }
 }
 
 resource "aws_s3_bucket" "processed" {
-  bucket = "my-image-processed-marcelo"
+  bucket = "my-image-processed-marcelo-${random_id.suffix.hex}"
   force_destroy = true
+
   tags = {
     Name = "Processed Images Bucket"
   }
 }
 
-# Configuración de la política de permisos para el bucket S3"
-resource "aws_iam_role" "lambda_exec_role" {
-  name = "lambda_exec_role_marcelo"
+resource "aws_iam_role" "lambda_exec_role_us" {
+  name = "lambda_exec_role_marcelo_us"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -36,23 +41,19 @@ resource "aws_iam_role" "lambda_exec_role" {
   })
 }
 
-# Configuración de la política de permisos para la función Lambda"
-resource "aws_iam_role_policy" "lambda_policy" {
-  name = "lambda_policy_marcelo"
-  role = aws_iam_role.lambda_exec_role.id
+resource "aws_iam_role_policy" "lambda_policy_us" {
+  name = "lambda_policy_marcelo_us"
+  role = aws_iam_role.lambda_exec_role_us.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject"
-        ]
+        Action = ["s3:GetObject", "s3:PutObject"]
         Resource = [
-          "arn:aws:s3:::my-image-originals-marcelo/*",
-          "arn:aws:s3:::my-image-processed-marcelo/*"
+          "${aws_s3_bucket.originals.arn}/*",
+          "${aws_s3_bucket.processed.arn}/*"
         ]
       },
       {
@@ -67,11 +68,10 @@ resource "aws_iam_role_policy" "lambda_policy" {
     ]
   })
 }
-# Configuración de la función Lambda
 
-resource "aws_lambda_function" "image_processor" {
-  function_name = var.lambda_function_name
-  role          = aws_iam_role.lambda_exec_role.arn
+resource "aws_lambda_function" "image_processor_us" {
+  function_name = "image-processor-marcelo-us"
+  role          = aws_iam_role.lambda_exec_role_us.arn
   handler       = "image_processor.lambda_handler"
   runtime       = "python3.9"
   timeout       = 10
@@ -81,34 +81,31 @@ resource "aws_lambda_function" "image_processor" {
 
   environment {
     variables = {
-      PROCESSED_BUCKET = "my-image-processed-marcelo"
+      PROCESSED_BUCKET = aws_s3_bucket.processed.bucket
     }
   }
 
-  depends_on = [aws_iam_role_policy.lambda_policy]
+  depends_on = [aws_iam_role_policy.lambda_policy_us]
 }
 
-# Configuración de la política de permisos para permitir que S3 invoque la función Lambda
-resource "aws_lambda_permission" "allow_s3" {
-  statement_id  = "AllowS3Invoke"
+resource "aws_lambda_permission" "allow_s3_us" {
+  statement_id  = "AllowS3InvokeUS"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.image_processor.function_name
+  function_name = aws_lambda_function.image_processor_us.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = "arn:aws:s3:::my-image-originals-marcelo"
+  source_arn    = aws_s3_bucket.originals.arn
 }
 
-# Configuración de la notificación del bucket S3 para invocar la función Lambda
-resource "aws_s3_bucket_notification" "trigger_lambda" {
+resource "aws_s3_bucket_notification" "trigger_lambda_us" {
   bucket = aws_s3_bucket.originals.id
 
   lambda_function {
-    lambda_function_arn = aws_lambda_function.image_processor.arn
+    lambda_function_arn = aws_lambda_function.image_processor_us.arn
     events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = ""      # opcional: podés poner "images/"
-    filter_suffix       = ".jpg"  # opcional: podés limitar a ".png", ".jpeg", etc.
+    filter_suffix       = ".jpg"
   }
 
   depends_on = [
-    aws_lambda_permission.allow_s3
+    aws_lambda_permission.allow_s3_us
   ]
 }
