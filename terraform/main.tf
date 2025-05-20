@@ -59,6 +59,48 @@ resource "aws_iam_role_policy" "lambda_policy_us" {
       {
         Effect = "Allow"
         Action = [
+        "s3:ListBucket"
+        ]
+        Resource = [
+        "arn:aws:s3:::my-image-originals-marcelo-*"
+        ]
+     },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::my-image-processed-marcelo-*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:*"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::my-image-processed-marcelo-*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:*"
+        ]
+        Resource = "*"
+      },
+
+      {
+        Effect = "Allow"
+        Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
@@ -86,6 +128,7 @@ resource "aws_lambda_function" "image_processor_us" {
   }
 
   depends_on = [aws_iam_role_policy.lambda_policy_us]
+
 }
 
 resource "aws_lambda_permission" "allow_s3_us" {
