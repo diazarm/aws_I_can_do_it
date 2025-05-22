@@ -7,16 +7,21 @@ resource "random_id" "suffix" {
 }
 
 resource "aws_s3_bucket" "originals" {
-  bucket = "my-image-originals-marcelo-${random_id.suffix.hex}"
+  bucket        = "my-image-originals-marcelo-${random_id.suffix.hex}"
   force_destroy = true
+
+  website {
+    index_document = "index.html"
+  }
 
   tags = {
     Name = "Original Images Bucket"
   }
+  
 }
 
 resource "aws_s3_bucket" "processed" {
-  bucket = "my-image-processed-marcelo-${random_id.suffix.hex}"
+  bucket        = "my-image-processed-marcelo-${random_id.suffix.hex}"
   force_destroy = true
 
   tags = {
@@ -58,46 +63,12 @@ resource "aws_iam_role_policy" "lambda_policy_us" {
       },
       {
         Effect = "Allow"
-        Action = [
-        "s3:ListBucket"
-        ]
+        Action = ["s3:ListBucket"]
         Resource = [
-        "arn:aws:s3:::my-image-originals-marcelo-*"
-        ]
-     },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket"
-        ]
-        Resource = [
-          "arn:aws:s3:::my-image-processed-marcelo-*"
+          aws_s3_bucket.originals.arn,
+          aws_s3_bucket.processed.arn
         ]
       },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:*"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket"
-        ]
-        Resource = [
-          "arn:aws:s3:::my-image-processed-marcelo-*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:*"
-        ]
-        Resource = "*"
-      },
-
       {
         Effect = "Allow"
         Action = [
@@ -123,12 +94,12 @@ resource "aws_lambda_function" "image_processor_us" {
 
   environment {
     variables = {
+      UPLOAD_BUCKET    = aws_s3_bucket.originals.bucket
       PROCESSED_BUCKET = aws_s3_bucket.processed.bucket
     }
   }
 
   depends_on = [aws_iam_role_policy.lambda_policy_us]
-
 }
 
 resource "aws_lambda_permission" "allow_s3_us" {
@@ -151,4 +122,111 @@ resource "aws_s3_bucket_notification" "trigger_lambda_us" {
   depends_on = [
     aws_lambda_permission.allow_s3_us
   ]
+}
+
+resource "aws_api_gateway_rest_api" "upload_api" {
+  name        = "UploadAPI"
+  description = "API Gateway para subir imágenes y activar la Lambda"
+}
+
+resource "aws_api_gateway_resource" "upload_resource" {
+  rest_api_id = aws_api_gateway_rest_api.upload_api.id
+  parent_id   = aws_api_gateway_rest_api.upload_api.root_resource_id
+  path_part   = "upload"
+}
+
+resource "aws_api_gateway_method" "upload_method" {
+  rest_api_id   = aws_api_gateway_rest_api.upload_api.id
+  resource_id   = aws_api_gateway_resource.upload_resource.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "lambda_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.upload_api.id
+  resource_id             = aws_api_gateway_resource.upload_resource.id
+  http_method             = aws_api_gateway_method.upload_method.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.image_processor_us.invoke_arn
+}
+
+resource "aws_lambda_permission" "api_gateway_invoke" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.image_processor_us.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.upload_api.execution_arn}/*/*"
+}
+
+resource "aws_api_gateway_deployment" "upload_deployment" {
+  depends_on  = [aws_api_gateway_integration.lambda_integration]
+  rest_api_id = aws_api_gateway_rest_api.upload_api.id
+  stage_name  = "prod"
+}
+
+output "processed_bucket_url" {
+  description = "URL base del bucket de imágenes procesadas"
+  value       = "https://${aws_s3_bucket.processed.bucket}.s3.amazonaws.com/"
+}
+
+output "frontend_bucket_website_url" {
+  description = "URL del sitio estático hospedado en el bucket de imágenes originales"
+  value       = aws_s3_bucket.originals.website_endpoint
+}
+
+output "api_gateway_endpoint" {
+  description = "Endpoint de API Gateway para subir imágenes"
+  value       = "${aws_api_gateway_deployment.upload_deployment.invoke_url}/upload"
+}
+
+resource "aws_api_gateway_method" "options_method" {
+  rest_api_id   = aws_api_gateway_rest_api.upload_api.id
+  resource_id   = aws_api_gateway_resource.upload_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "options_integration" {
+  rest_api_id = aws_api_gateway_rest_api.upload_api.id
+  resource_id = aws_api_gateway_resource.upload_resource.id
+  http_method = aws_api_gateway_method.options_method.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "options_response" {
+  rest_api_id = aws_api_gateway_rest_api.upload_api.id
+  resource_id = aws_api_gateway_resource.upload_resource.id
+  http_method = aws_api_gateway_method.options_method.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+
+  response_models = {
+    "application/json" = "Empty"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "options_integration_response" {
+  rest_api_id = aws_api_gateway_rest_api.upload_api.id
+  resource_id = aws_api_gateway_resource.upload_resource.id
+  http_method = aws_api_gateway_method.options_method.http_method
+  status_code = aws_api_gateway_method_response.options_response.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,filename'"
+    "method.response.header.Access-Control-Allow-Methods" = "'OPTIONS,POST'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
 }

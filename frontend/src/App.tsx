@@ -7,20 +7,38 @@ function App() {
   const handleUpload = async () => {
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const res = await fetch('https://<TU_API_GATEWAY_ENDPOINT>', {
+      const arrayBuffer = await file.arrayBuffer();
+      const base64File = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+      const res = await fetch("https://ur2l31zaj4.execute-api.us-east-1.amazonaws.com/prod/upload", {
         method: 'POST',
-        body: file,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'filename': file.name,
+        },
+        body: base64File,
       });
 
-      const data = await res.json();
-      setMessage(data.body || 'Imagen subida exitosamente');
-    } catch (error) {
+      const text = await res.text(); // Leemos como texto por si no es JSON
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Respuesta no es JSON válido: " + text);
+      }
+
+      if (!res.ok) throw new Error(data.error || "Error en el servidor");
+
+      setMessage(data.message || 'Imagen subida exitosamente');
+    } catch (error: unknown) {
       console.error(error);
-      setMessage('Error al subir la imagen');
+      if (error instanceof Error) {
+        setMessage(error.message || 'Error al subir la imagen');
+      } else {
+        setMessage('Error al subir la imagen');
+      }
     }
   };
 
