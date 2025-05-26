@@ -10,9 +10,6 @@ resource "aws_s3_bucket" "originals" {
   bucket        = "my-image-originals-marcelo-${random_id.suffix.hex}"
   force_destroy = true
 
-  website {
-    index_document = "index.html"
-  }
 
   tags = {
     Name = "Original Images Bucket"
@@ -162,7 +159,12 @@ resource "aws_lambda_permission" "api_gateway_invoke" {
 resource "aws_api_gateway_deployment" "upload_deployment" {
   depends_on  = [aws_api_gateway_integration.lambda_integration]
   rest_api_id = aws_api_gateway_rest_api.upload_api.id
-  stage_name  = "prod"
+}
+
+resource "aws_api_gateway_stage" "prod" {
+  stage_name    = "prod"
+  rest_api_id   = aws_api_gateway_rest_api.upload_api.id
+  deployment_id = aws_api_gateway_deployment.upload_deployment.id
 }
 
 output "processed_bucket_url" {
@@ -170,15 +172,15 @@ output "processed_bucket_url" {
   value       = "https://${aws_s3_bucket.processed.bucket}.s3.amazonaws.com/"
 }
 
-output "frontend_bucket_website_url" {
-  description = "URL del sitio estático hospedado en el bucket de imágenes originales"
-  value       = aws_s3_bucket.originals.website_endpoint
-}
-
 output "api_gateway_endpoint" {
   description = "Endpoint de API Gateway para subir imágenes"
-  value       = "${aws_api_gateway_deployment.upload_deployment.invoke_url}/upload"
+  value       = "${aws_api_gateway_stage.prod.invoke_url}/upload"
 }
+
+# output "api_gateway_endpoint" {
+#   description = "Endpoint de API Gateway para subir imágenes"
+#   value       = "${aws_api_gateway_deployment.upload_deployment.invoke_url}/upload"
+# }
 
 resource "aws_api_gateway_method" "options_method" {
   rest_api_id   = aws_api_gateway_rest_api.upload_api.id

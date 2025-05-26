@@ -46,7 +46,9 @@ function App() {
     <div style={{ padding: '2rem' }}>
       <h1>Subí tu imagen</h1>
       <input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} />
+      <br /><br />
       <button onClick={handleUpload}>Subir</button>
+      <br />
       <p>{message}</p>
     </div>
   );

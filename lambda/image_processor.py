@@ -13,7 +13,7 @@ def lambda_handler(event, context):
     try:
         print("Evento recibido:", event)
 
-        # ✅ Evento desde S3 (trigger por subida directa al bucket)
+        #  Evento desde S3 (trigger por subida directa al bucket)
         if "Records" in event and "s3" in event["Records"][0]:
             bucket = event["Records"][0]["s3"]["bucket"]["name"]
             key = event["Records"][0]["s3"]["object"]["key"]
@@ -29,7 +29,7 @@ def lambda_handler(event, context):
                 "body": json.dumps({"message": f"Imagen {key} copiada como {new_key} en {PROCESSED_BUCKET}"})
             }
 
-        # ✅ Evento desde API Gateway (frontend)
+        #  Evento desde API Gateway (frontend)
         elif "body" in event:
             file_content = base64.b64decode(event["body"])
             filename = event["headers"].get("filename", "upload.jpg")
